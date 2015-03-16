@@ -45,11 +45,11 @@ por = 0.10;                         % [-] Rock porosity ~ .10
 alpha = 2.0;                        % [-] Pore size distribution index ~ 2
 
 % Spatial Parameters
-Lx = 10;                           % [m] horizontal length
-Ly = 10;                           % [m] vertical length
-nx = 10;                           % number of horizontal cells
+Lx = 10;                             % [m] horizontal length
+Ly = 10;                             % [m] vertical length
+nx = 32;                             % number of horizontal cells
 inx = nx-2;                         % number of internal horizontal cells
-ny = 10;                           % number of vertical cells = number of internal vertical cells
+ny = 30;                             % number of vertical cells = number of internal vertical cells
 dx = Lx/(nx-1);                     % [m] horizontal step size
 dy = Ly/(ny-1);                     % [m] vertical step size
 posX = zeros(nx,1);                 % initialization of horizontal position vector
@@ -64,7 +64,7 @@ end
 faceY = arithmeticAverage(posY);    % vertical position at each face
 
 % Time Parameters
-simTime=5*31500000;                 % [s] Simulation time. 1year~31500000s
+simTime=2*31500000;                 % [s] Simulation time. 1year~31500000s
 dt=1e4;                             % [s] Time step size ~ 1e4
 tLevel=simTime/dt;                  % [-] Number of time levels
 tim=zeros(tLevel,1);                % Initialization of the time vector
@@ -82,38 +82,48 @@ hakX = zeros(ny,nx-1);              % initialization of harmonic mean in hor. di
 for a=1:ny
    hakX(a,:) = harmonicAvg(k(a,:)); % creation of harm. mean in hor. direction
 end
-hakY = zeros(ny-1,nx-2);            % initialization of harmonic mean in vert. direction
-for b=2:nx-1
-   hakY(:,b-1) = harmonicAvg(k(:,b)); %creation of harmonic mean in vert. direction
+hakY = zeros(ny-1,nx);            % initialization of harmonic mean in vert. direction
+for b=1:nx
+   hakY(:,b) = harmonicAvg(k(:,b)); %creation of harmonic mean in vert. direction
 end
 % See, in the loop from above, that the counter starts from b=2 an goes to
 % nx-1, this is because we don't need to take into account the harm. means
 % of the first and last columns, 'cause they are BC
-hakYPlot = zeros(ny-1,nx); 
-for b=1:nx
-    hakYPlot(:,b) = harmonicAvg(k(:,b));
-end
+hakY_use = hakY;
+hakY_use(:,1) = [];
+hakY_use(:,end) = [];
+
 % See, in the loop from above that the counter starts and ends normally. We
 % are gonna need this in order to plot later on the vertical Darcy velocity
 
 
 %% Boundary and initial conditions
 %Saturation of wetting phase
-Sw = ones(nx,ny);                   % [-] Initialization 
+Sw = ones(ny,nx);                   % [-] Initialization 
 Sw(:,end) = 1;                      % [-] Right Boundary ~ Sw=1
 Sw(:,1)   = 0;                      % [-] Left Boundary  ~ Sw=0
 %Effective saturation 
 Swe = effectSat(Sw,Siw);
 %Boundary conditions
-pn          = 1E+06 * ones(nx,ny);  % [Pa] Initialization pressure non-wetting phase ~ pn=1e-05
+pn          = 1E+06 * ones(ny,nx);  % [Pa] Initialization pressure non-wetting phase ~ pn=1e-05
 pn(:,1)     = 1E+07;                % [Pa] Left boundary pressures
 pn(:,end)   = 1E+06;                % [Pa] Right boundary pressures
 pL = 1E+07 * ones(ny,1);
 pR = 1E+06 * ones(ny,1);
 
+%% Cells to storage information
+numP=50;                            % number of printed vectors
+SnCell = cell(numP,1);
+pnCell = cell(numP,1);
+timPlot=zeros(numP,1);
+
 %% Time loop
-for w=1:1             % begin of the time loop
+for w=1:tLevel             % begin of the time loop
    
+    if mod(w,(tLevel/numP))==0
+        timPlot(w/(tLevel/numP),1)=tim(w);
+    end
+    
     str=['Simulation time: ' num2str(tim(w)/31500000) ' years'];
     disp(str);
     
@@ -146,18 +156,11 @@ for w=1:1             % begin of the time loop
     %Vertical Upstream mobility of the non wetting phase [-]
     upMobNonY = verticUpstreamMobiliy(pn,mobNon);
     
-    % %Upstream mobility of the non-wetting phase
-    % [upMobNon,potNon]=upstreamGravity(pn,mobNon,denNon,angle,dx);
-    % upMobNon(end)=mobNon(end);        %This is mandatory to achieve
-                                        %the convergency of the method.
-    
     %Horizontal total upstream mobility [-]
     upMobTotX = upMobWetX + upMobNonX;
     
     %Vertical total upstream mobility [-]
-    upMobTotYPlot = upMobWetY + upMobNonY;
-    upMobTotY = upMobTotYPlot;
-    upMobTotY(:,1) = [];  upMobTotY(:,end) = [];  
+    upMobTotY = upMobWetY + upMobNonY;
     
     %Horizontal upstream wet fractional flow [-]
     upWetFracX = upFracFlow(upMobWetX,upMobNonX);
@@ -170,10 +173,12 @@ for w=1:1             % begin of the time loop
 
     JP = - hakX .* upMobTotX .* (dy/dx);                % this take into account the horizontal term
                                                         % that multiply the pressure
-    IP = - hakY .* upMobTotY .* (dx/dy);                % this take into account the vertical term
+    IP = - hakY .* upMobTotY .* (dx/dy);                  % this take into account the vertical term
                                                         % that multiply the pressure
-    IPplot = - hakYPlot .* upMobTotYPlot .* (dx/dy);    % we need this for the vertical
-                                                        % Darcy velocity plot
+    IP_use = IP;
+    IP_use(:,1) = [];
+    IP_use(:,end) = [];
+    
     
   %% Solving the linear system
 
@@ -190,18 +195,18 @@ for w=1:1             % begin of the time loop
     row = 1;
     for j=1:inx
         if j==1
-            A((row-1)*inx+j,(row-1)*inx+ j) = - JP(row,j) - JP(row,j+1) - IP(row,j);    % First column,
+            A((row-1)*inx+j,(row-1)*inx+ j) = - JP(row,j) - JP(row,j+1) - IP_use(row,j);    % First column,
             A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                           % affected by 
-            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                           % Left BC
+            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                           % Left BC
         elseif j > 1 && j < inx
             A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                             % 
-            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row,j);     % Internal   
+            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row,j);     % Internal   
             A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                           % Columns
-            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                           %
+            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                           %
         elseif j == inx
             A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                             % Last column,
-            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row,j);      % affected by  
-            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                           % Right BC
+            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row,j);      % affected by  
+            A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                           % Right BC
         end 
     end
 
@@ -209,21 +214,21 @@ for w=1:1             % begin of the time loop
     for row=2:ny-1  % This loop goes over all the internal rows 
         for j=1:inx % This loop goes over all the columns
             if j == 1
-                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                                     % First column,
-                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row,j) - IP(row-1,j);    % affected by    
+                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                                     % First column,
+                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row,j) - IP_use(row-1,j);    % affected by    
                 A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                                       % Left              
-                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                                       % Boundary Cond.
+                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                                       % Boundary Cond.
             elseif j > 1 && j < inx
-                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                                     % 
+                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                                     % 
                 A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                                         %
-                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row,j) - IP(row-1,j);    % Intern. Column   
+                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row,j) - IP_use(row-1,j);    % Intern. Column   
                 A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                                       %
-                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                                       %
+                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                                       %
             elseif j == inx
-                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                                     % Last column,
+                A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                                     % Last column,
                 A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                                         % affected by
-                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row,j) - IP(row-1,j);    % Right    
-                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP(row,j);                                       % Boundary Cond.
+                A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row,j) - IP_use(row-1,j);    % Right    
+                A((row-1)*inx+j,(row-1)*inx+ j+inx) = +IP_use(row,j);                                       % Boundary Cond.
             end
         end
     end
@@ -233,18 +238,18 @@ for w=1:1             % begin of the time loop
     row = ny;
     for j=1:inx
         if j == 1
-            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                         % First column, 
-            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row-1,j);    % affected by
+            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                         % First column, 
+            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row-1,j);    % affected by
             A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                           % Left BC
         elseif j > 1 && j < inx
-            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                         % 
+            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                         % 
             A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                             % Internal 
-            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row-1,j);    % Columns
+            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row-1,j);    % Columns
             A((row-1)*inx+j,(row-1)*inx+ j+1) = +JP(row,j+1);                           % 
         elseif j == inx
-            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP(row-1,j);                         % Last column,
+            A((row-1)*inx+j,(row-1)*inx+ j-inx) = +IP_use(row-1,j);                         % Last column,
             A((row-1)*inx+j,(row-1)*inx+ j-1) = +JP(row,j);                             % affected by
-            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP(row-1,j);    % Right BC
+            A((row-1)*inx+j,(row-1)*inx+ j) = -JP(row,j) - JP(row,j+1) - IP_use(row-1,j);    % Right BC
         end
     end
 
@@ -310,13 +315,15 @@ for w=1:1             % begin of the time loop
     end
     pPlot = pPlot'; % We have to transpose the pressure matrix
     
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
     %% Darcy Velocities
 
     %Horizontal velocities
     darX = zeros(ny,(nx-1));
     for row=1:ny
         for j=1:nx-1
-            darX(row,j) = - (hakX(row,j) .* upMobTotX(row,j)) * ((pPlot(row,j)-pPlot(row,j+1))/dx);
+            darX(row,j) = - (hakX(row,j) .* upMobTotX(row,j)) * ((pPlot(row,j+1)-pPlot(row,j))/dx);
         end
     end
 
@@ -324,42 +331,81 @@ for w=1:1             % begin of the time loop
     darY = zeros(ny-1,nx);
     for row=1:ny-1
         for j=1:nx
-            darY(row,j) = - (hakYPlot(row,j) .* upMobTotYPlot(row,j)) * ((pPlot(row,j)-pPlot(row+1,j))/dy);
+            darY(row,j) = - (hakY(row,j) .* upMobTotY(row,j)) * ((pPlot(row,j)-pPlot(row+1,j))/dy);
         end
     end    
-    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   
     %% SATURATION EQUATION
     
-    % for first row
+    %for first row
     i = 1;
     for j=1:inx
-        Sw(i,j+1) = (dt/(por*dx*dy)) * (...
-                  + upWetFracX(i,j)   * dy * darX(i,j)...
-                  - upWetFracX(i,j+1) * dy * darX(i,j+1) ...
-                  - upWetFracY(i,j) * dx * darY(i,j)) + Sw(1,j+1);
+        Sw(i,j+1) = (dt/(por*dx*dy))  * (...
+                  + upWetFracX(i,j)   * dy * darX(i,j)    ...
+                  - upWetFracX(i,j+1) * dy * darX(i,j+1)  ...
+                  - upWetFracY(i,j+1) * dx * darY(i,j+1)) ...
+                  + Sw(1,j+1);
     end
     
-    % internal rows
+    %internal rows
     for i=2:ny-1
         for j=1:inx
-            Sw(i,j+1) = (dt/(por*dx*dy)) * (...
-                        + upWetFracX(i,j)   * dy * darX(i,j)...
+            Sw(i,j+1) = (dt/(por*dx*dy))    * (...
+                        + upWetFracX(i,j)   * dy * darX(i,j)   ...
                         - upWetFracX(i,j+1) * dy * darX(i,j+1) ...
-                        + upWetFracY(i-1,j)   * dx * darY(i-1,j) ...
-                        - upWetFracY(i,j) * dx * darY(i,j)) + Sw(1,j+1);
+                        + upWetFracY(i-1,j+1) * dx * darY(i-1,j+1) ...
+                        - upWetFracY(i,j+1)   * dx * darY(i,j+1))  ...
+                        + Sw(i,j+1);
         end
     end
     
-    % last row
+    %last row
     i = ny;
     for j=1:inx
         Sw(i,j+1) = (dt/(por*dx*dy)) * (...
                   + upWetFracX(i,j)   * dy * darX(i,j)...
                   - upWetFracX(i,j+1) * dy * darX(i,j+1) ...
-                  + upWetFracY(i-1,j)   * dx * darY(i-1,j)) + Sw(1,j+1);
+                  + upWetFracY(i-1,j+1)   * dx * darY(i-1,j+1))...
+                  + Sw(i,j+1);
     end
     
+    if mod(w,(tLevel/numP))==0
+        SnCell{w/(tLevel/numP),1}=1-Sw;
+    end
     
 end % end of the time loop
 
 Sn = 1 - Sw;
+
+%% SATURATION PLOT
+figSN = figure;
+hold on; box on;
+xlabel('Horizontal position [m]','FontSize',11);
+ylabel('Vertical position [m]','FontSize',11);
+zlabel('Saturation of non-wetting phase','FontSize',11);
+colorbar;
+view(45,14);
+axis square;
+set(gcf,'PaperPosition',[0 0 5 4]);
+set(gcf,'PaperSize',[5 4]);
+M=moviein(numP);
+for i=1:numP
+    thSn.String=sprintf('Time [years]: %3.3d',...
+        i*(simTime/(31500000*numP)));
+    pause(.001); % let's redraw the axis
+    surf(posX,posY,SnCell{i,1});
+    %plot(pos,SnCell{i,1},'r');
+    %eval(['export_fig -transparent output/sn/snCase07_' num2str(i) '.pdf']);
+    M(i)=getframe(figSN);
+end
+
+
+
+
+
+
+
+
+

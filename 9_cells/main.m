@@ -315,6 +315,10 @@ for w=1:tLevel             % begin of the time loop
     end
     pPlot = pPlot'; % We have to transpose the pressure matrix
     
+     if mod(w,(tLevel/numP))==0
+        pnCell{w/(tLevel/numP),1}=pPlot;
+    end 
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     %% Darcy Velocities
@@ -377,28 +381,55 @@ for w=1:tLevel             % begin of the time loop
     
 end % end of the time loop
 
-Sn = 1 - Sw;
-
 %% SATURATION PLOT
-figSN = figure;
-hold on; box on;
-xlabel('Horizontal position [m]','FontSize',11);
-ylabel('Vertical position [m]','FontSize',11);
-zlabel('Saturation of non-wetting phase','FontSize',11);
-set(gcf,'PaperPosition',[0 0 5 4]);
-set(gcf,'PaperSize',[5 4]);
+figSn = figure;
 M=moviein(numP);
+view(45,14);
+thSn=handle(text('Position',[0,0,-0.5]));
 for i=1:numP
-    thSn.String=sprintf('Time [years]: %3.3d',...
+    hold on; box on;
+    xlabel('Horizontal position [m]','FontSize',11);
+    ylabel('Vertical position [m]','FontSize',11);
+    zlabel('Saturation of non-wetting phase','FontSize',11);
+    colorbar;
+    axis square;
+    set(gcf,'PaperPosition',[0 0 5 4]);
+    set(gcf,'PaperSize',[5 4]);
+    thSn.String=sprintf('Time [years]: %1.2f',...
         i*(simTime/(31500000*numP)));
     pause(.001); % let's redraw the axis
-    contour(posX,posY,SnCell{i,1});
-    %plot(pos,SnCell{i,1},'r');
-    %eval(['export_fig -transparent output/sn/snCase07_' num2str(i) '.pdf']);
-    M(i)=getframe(figSN);
+    h1 = surf(posX,posY,SnCell{i,1},...
+        'EdgeColor','black');
+    view(45,14);
+    eval(['export_fig -transparent output/sn/img' num2str(i) '.pdf']);
+    M(i)=getframe(figSn);
+    %delete(h1);
 end
 
+%% Pressure plot
 
+figP = figure;
+M=moviein(numP);
+view(22,12);
+thpn=handle(text('Position',[0,0,0]));
+for i=1:numP
+    hold on; box off;
+    xlabel('Horizontal position [m]','FontSize',11);
+    ylabel('Vertical position [m]','FontSize',11);
+    zlabel('Pressure [Pa]','FontSize',11);
+    colorbar;
+    axis square;
+    set(gcf,'PaperPosition',[0 0 5 4]);
+    set(gcf,'PaperSize',[5 4]);
+    thpn.String=sprintf('Time [years]: %1.2f',...
+        i*(simTime/(31500000*numP)));
+    pause(.001); % let's redraw the axis
+    h1 = surf(posX,posY,pnCell{i,1},...
+        'EdgeColor','black');
+    %eval(['export_fig -transparent output/pn/img' num2str(i) '.pdf']);
+    M(i)=getframe(figP);
+    delete(h1);
+end
 
 
 

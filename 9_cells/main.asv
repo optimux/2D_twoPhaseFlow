@@ -64,7 +64,7 @@ end
 faceY = arithmeticAverage(posY);    % vertical position at each face
 
 % Time Parameters
-simTime=100*31500000;                 % [s] Simulation time. 1year~31500000s
+simTime=20*31500000;                 % [s] Simulation time. 1year~31500000s
 dt=1e5;                             % [s] Time step size ~ 1e4
 tLevel=simTime/dt;                  % [-] Number of time levels
 tim=zeros(tLevel,1);                % Initialization of the time vector
